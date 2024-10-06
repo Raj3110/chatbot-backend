@@ -1,1 +1,0 @@
-This is where Certificate files will be stored.
