@@ -111,7 +111,7 @@ def google_callback():
         return jsonify({'message': f'Something went wrong: {str(e)}'}), 400
 
 
-# Microsoft Login
+# # Microsoft Login
 # app.config["MICROSOFT_OAUTH_CLIENT_ID"] = os.getenv('MICROSOFT_OAUTH_CLIENT_ID')
 # app.config["MICROSOFT_OAUTH_CLIENT_SECRET"] = os.getenv('MICROSOFT_OAUTH_CLIENT_SECRET')
 # app.config["MICROSOFT_OAUTH_REDIRECT_URI"] = os.getenv('MICROSOFT_OAUTH_REDIRECT_URI')
