@@ -70,7 +70,7 @@ google_blueprint = make_google_blueprint(
 app.register_blueprint(google_blueprint, url_prefix="/login")
 
 
-@app.route("/", methods=["POST"])
+@app.route("/")
 def index():
     if not google.authorized:
         return redirect(url_for("google.login"))
@@ -79,111 +79,115 @@ def index():
 
 @app.route("/callback")
 def google_callback():
-    if not google.authorized:
-        return jsonify({"error": "Failed to log in."}), 400
-    resp = google.get("/oauth2/v1/userinfo")
-    assert resp.ok, resp.text
+    try:
+        if not google.authorized:
+            return jsonify({"error": "Failed to log in."}), 400
+        resp = google.get("/oauth2/v1/userinfo")
+        assert resp.ok, resp.text
 
-    user_info = resp.json()
-    print(user_info)
-    exist_user = db.User.find_one({'email': user_info['email']}, {'first_name': 1, 'user_id': 1})
+        user_info = resp.json()
+        exist_user = db.User.find_one({'email': user_info['email']}, {'first_name': 1, 'user_id': 1})
 
-    if not exist_user:
-        user_id = "User" + user_info['given_name'].upper() + "-" + str(round((datetime.now().timestamp()) * 1000000))
-        db.User.insert_one({
-            'first_name': user_info['given_name'],
-            'last_name': user_info['family_name'],
-            'email': user_info['email'],
-            'user_id': user_id
-        })
-    else:
-        user_id = exist_user['user_id']
-
-    user_info['user_id'] = user_id
-    token = create_access_token(identity=user_info['email'])
-    user_info['access_token'] = token
-    user_info_str = urllib.parse.quote(json.dumps(user_info))
-
-    return redirect(f"{os.getenv('FRONTEND_URL')}/login?data={user_info_str}", code=302)
-
-
-# Microsoft Login
-app.config["MICROSOFT_OAUTH_CLIENT_ID"] = os.getenv('MICROSOFT_OAUTH_CLIENT_ID')
-app.config["MICROSOFT_OAUTH_CLIENT_SECRET"] = os.getenv('MICROSOFT_OAUTH_CLIENT_SECRET')
-app.config["MICROSOFT_OAUTH_REDIRECT_URI"] = os.getenv('MICROSOFT_OAUTH_REDIRECT_URI')
-
-
-@app.route("/login/microsoft")
-def microsoft_login():
-    msal_app = ConfidentialClientApplication(
-        app.config["MICROSOFT_OAUTH_CLIENT_ID"],
-        authority="https://login.microsoftonline.com/consumers",
-        client_credential=app.config["MICROSOFT_OAUTH_CLIENT_SECRET"]
-    )
-    auth_url = msal_app.get_authorization_request_url(
-        scopes=["User.Read"],
-        state=os.urandom(16),
-        redirect_uri=app.config["MICROSOFT_OAUTH_REDIRECT_URI"]
-    )
-    return redirect(auth_url)
-
-
-@app.route("/microsoft/callback")
-def microsoft_callback():
-    code = request.args.get('code')
-    if not code:
-        return jsonify({"error": "Failed to log in."}), 400
-
-    msal_app = ConfidentialClientApplication(
-        app.config["MICROSOFT_OAUTH_CLIENT_ID"],
-        authority="https://login.microsoftonline.com/consumers",
-        client_credential=app.config["MICROSOFT_OAUTH_CLIENT_SECRET"]
-    )
-    result = msal_app.acquire_token_by_authorization_code(
-        code,
-        scopes=["User.Read"],
-        redirect_uri=app.config["MICROSOFT_OAUTH_REDIRECT_URI"]
-    )
-
-    if "error" in result:
-        return jsonify({"error": "Failed to log in.", "details": result["error_description"]}), 400
-
-    if "access_token" in result:
-        headers = {'Authorization': 'Bearer ' + result['access_token']}
-        graph_data = requests.get("https://graph.microsoft.com/v1.0/me", headers=headers).json()
-
-        exist_user = db.User.find_one({'email': graph_data["mail"]}, {'first_name': 1, 'user_id': 1})
         if not exist_user:
-            user_id = "User" + graph_data.get("givenName").upper() + "-" + str(
+            user_id = "User" + user_info['given_name'].upper() + "-" + str(
                 round((datetime.now().timestamp()) * 1000000))
-            user_data = {
-                'first_name': graph_data.get("givenName", ""),
-                'last_name': graph_data.get("surname", ""),
-                'email': graph_data.get("mail", ""),
-                'phone': graph_data.get("mobilePhone", ""),
+            db.User.insert_one({
+                'first_name': user_info['given_name'],
+                'last_name': user_info['family_name'],
+                'email': user_info['email'],
                 'user_id': user_id
-            }
-            db.User.insert_one(user_data)
+            })
         else:
-            db.User.update_one({'email': graph_data["mail"]}, {'$set': {'phone': graph_data.get("mobilePhone", "")}})
             user_id = exist_user['user_id']
 
-        user_info = {
-            'first_name': graph_data.get("givenName", ""),
-            'last_name': graph_data.get("surname", ""),
-            'email': graph_data.get("mail", ""),
-            'phone': graph_data.get("mobilePhone", ""),
-            'user_id': user_id
-        }
-
+        user_info['user_id'] = user_id
         token = create_access_token(identity=user_info['email'])
         user_info['access_token'] = token
         user_info_str = urllib.parse.quote(json.dumps(user_info))
 
-        frontend_url = os.getenv('FRONTEND_URL') + "/login?data=" + user_info_str
-        return redirect(frontend_url, code=302)
-    else:
-        return jsonify({"error": "Failed to log in."}), 400
+        return redirect(f"{os.getenv('FRONTEND_URL')}/login?data={user_info_str}", code=302)
+
+    except Exception as e:
+        return jsonify({'message': f'Something went wrong: {str(e)}'}), 400
+
+
+# Microsoft Login
+# app.config["MICROSOFT_OAUTH_CLIENT_ID"] = os.getenv('MICROSOFT_OAUTH_CLIENT_ID')
+# app.config["MICROSOFT_OAUTH_CLIENT_SECRET"] = os.getenv('MICROSOFT_OAUTH_CLIENT_SECRET')
+# app.config["MICROSOFT_OAUTH_REDIRECT_URI"] = os.getenv('MICROSOFT_OAUTH_REDIRECT_URI')
+
+
+# @app.route("/login/microsoft")
+# def microsoft_login():
+#     msal_app = ConfidentialClientApplication(
+#         app.config["MICROSOFT_OAUTH_CLIENT_ID"],
+#         authority="https://login.microsoftonline.com/consumers",
+#         client_credential=app.config["MICROSOFT_OAUTH_CLIENT_SECRET"]
+#     )
+#     auth_url = msal_app.get_authorization_request_url(
+#         scopes=["User.Read"],
+#         state=os.urandom(16),
+#         redirect_uri=app.config["MICROSOFT_OAUTH_REDIRECT_URI"]
+#     )
+#     return redirect(auth_url)
+
+
+# @app.route("/microsoft/callback")
+# def microsoft_callback():
+#     code = request.args.get('code')
+#     if not code:
+#         return jsonify({"error": "Failed to log in."}), 400
+
+#     msal_app = ConfidentialClientApplication(
+#         app.config["MICROSOFT_OAUTH_CLIENT_ID"],
+#         authority="https://login.microsoftonline.com/consumers",
+#         client_credential=app.config["MICROSOFT_OAUTH_CLIENT_SECRET"]
+#     )
+#     result = msal_app.acquire_token_by_authorization_code(
+#         code,
+#         scopes=["User.Read"],
+#         redirect_uri=app.config["MICROSOFT_OAUTH_REDIRECT_URI"]
+#     )
+
+#     if "error" in result:
+#         return jsonify({"error": "Failed to log in.", "details": result["error_description"]}), 400
+
+#     if "access_token" in result:
+#         headers = {'Authorization': 'Bearer ' + result['access_token']}
+#         graph_data = requests.get("https://graph.microsoft.com/v1.0/me", headers=headers).json()
+
+#         exist_user = db.User.find_one({'email': graph_data["mail"]}, {'first_name': 1, 'user_id': 1})
+#         if not exist_user:
+#             user_id = "User" + graph_data.get("givenName").upper() + "-" + str(
+#                 round((datetime.now().timestamp()) * 1000000))
+#             user_data = {
+#                 'first_name': graph_data.get("givenName", ""),
+#                 'last_name': graph_data.get("surname", ""),
+#                 'email': graph_data.get("mail", ""),
+#                 'phone': graph_data.get("mobilePhone", ""),
+#                 'user_id': user_id
+#             }
+#             db.User.insert_one(user_data)
+#         else:
+#             db.User.update_one({'email': graph_data["mail"]}, {'$set': {'phone': graph_data.get("mobilePhone", "")}})
+#             user_id = exist_user['user_id']
+
+#         user_info = {
+#             'first_name': graph_data.get("givenName", ""),
+#             'last_name': graph_data.get("surname", ""),
+#             'email': graph_data.get("mail", ""),
+#             'phone': graph_data.get("mobilePhone", ""),
+#             'user_id': user_id
+#         }
+
+#         token = create_access_token(identity=user_info['email'])
+#         user_info['access_token'] = token
+#         user_info_str = urllib.parse.quote(json.dumps(user_info))
+
+#         frontend_url = os.getenv('FRONTEND_URL') + "/login?data=" + user_info_str
+#         return redirect(frontend_url, code=302)
+#     else:
+#         return jsonify({"error": "Failed to log in."}), 400
 
 
 # Manual Authentication
